@@ -15,9 +15,9 @@
  */
 package com.dagger.chatapp;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
-import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -134,35 +134,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        childEventListener = new ChildEventListener() {
-            @Override
-            public void onChildAdded(DataSnapshot dataSnapshot, String s) {
-                FriendlyMessage friendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
-                mMessageAdapter.add(friendlyMessage);
-            }
-
-            @Override
-            public void onChildChanged(DataSnapshot dataSnapshot, String s) {
-
-            }
-
-            @Override
-            public void onChildRemoved(DataSnapshot dataSnapshot) {
-
-            }
-
-            @Override
-            public void onChildMoved(DataSnapshot dataSnapshot, String s) {
-
-            }
-
-            @Override
-            public void onCancelled(DatabaseError databaseError) {
-
-            }
-        };
-        databaseReference.addChildEventListener(childEventListener);
-
         authStateListener = new FirebaseAuth.AuthStateListener() {
             @Override
             public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
@@ -176,12 +147,22 @@ public class MainActivity extends AppCompatActivity {
                                             new AuthUI.IdpConfig.Builder(AuthUI.GOOGLE_PROVIDER).build()))
                                     .build(),
                             RC_SIGN_IN);
-                    Snackbar.make(getWindow().getDecorView(), "Logged in", Snackbar.LENGTH_SHORT).show();
+//                    Snackbar.make(getWindow().getDecorView(), "Logged in", Snackbar.LENGTH_SHORT).show();
                 } else {
-                    Snackbar.make(getWindow().getDecorView(), "Logging in", Snackbar.LENGTH_SHORT).show();
+//                    Snackbar.make(getWindow().getDecorView(), "Logging in", Snackbar.LENGTH_SHORT).show();
+                    onSignedIn(firebaseAuth.getCurrentUser().getDisplayName());
                 }
             }
         };
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == RC_SIGN_IN) {
+            if (resultCode == RESULT_CANCELED)
+                finish();
+        }
     }
 
     @Override
@@ -193,19 +174,80 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        return super.onOptionsItemSelected(item);
+        switch (item.getItemId()) {
+            case R.id.sign_out_menu:
+//                AuthUI.getInstance().signOut(this);
+                FirebaseAuth.getInstance().signOut();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        firebaseAuth.removeAuthStateListener(authStateListener);
+    }
 
+    @Override
+    protected void onStop() {
+        super.onStop();
+        firebaseAuth.removeAuthStateListener(authStateListener);
+        onSignedOut();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         firebaseAuth.addAuthStateListener(authStateListener);
+    }
+
+    public void onSignedIn(String username) {
+        mUsername = username;
+        attachDbReadListeenr();
+    }
+
+    public void onSignedOut() {
+        mUsername = ANONYMOUS;
+        removeDbReadListener();
+        mMessageAdapter.clear();
+    }
+
+    public void attachDbReadListeenr() {
+        if (childEventListener == null) {
+            childEventListener = new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                    FriendlyMessage friendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
+                    mMessageAdapter.add(friendlyMessage);
+                }
+
+                @Override
+                public void onChildChanged(DataSnapshot dataSnapshot, String s) {
+
+                }
+
+                @Override
+                public void onChildRemoved(DataSnapshot dataSnapshot) {
+
+                }
+
+                @Override
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) {
+
+                }
+
+                @Override
+                public void onCancelled(DatabaseError databaseError) {
+
+                }
+            };
+        }
+        databaseReference.addChildEventListener(childEventListener);
+    }
+
+    public void removeDbReadListener() {
+        if (childEventListener != null)
+            databaseReference.removeEventListener(childEventListener);
     }
 }
