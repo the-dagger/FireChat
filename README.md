@@ -4,7 +4,7 @@ This repository contains code for the FireChat project in the [Firebase in a Wee
 
 ## Overview
 
-FriendlyChat is an app that allows users to send and receive text and photos in realtime across platforms.
+FireChat is an app that allows users to send and receive text and photos in realtime across platforms.
 
 ## Using the App
 
