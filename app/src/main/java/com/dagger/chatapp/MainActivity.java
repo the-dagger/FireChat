@@ -15,14 +15,22 @@
  */
 package com.dagger.chatapp;
 
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
+import android.support.v4.content.LocalBroadcastManager;
 import android.support.v7.app.AppCompatActivity;
+import android.support.v7.app.NotificationCompat;
 import android.text.Editable;
 import android.text.InputFilter;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -38,8 +46,6 @@ import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.ChildEventListener;
-import com.google.firebase.database.DataSnapshot;
-import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.storage.FirebaseStorage;
@@ -48,7 +54,8 @@ import com.google.firebase.storage.UploadTask;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+
+import static android.support.v4.app.NotificationCompat.PRIORITY_MAX;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -73,7 +80,10 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseStorage firebaseStorage;
     private StorageReference storageReference;
 
+    ArrayList<FriendlyMessage> friendlyMessages;
     private String mUsername;
+
+    BroadcastReceiver broadcastReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -94,7 +104,8 @@ public class MainActivity extends AppCompatActivity {
         mSendButton = (Button) findViewById(R.id.sendButton);
 
         // Initialize message ListView and its adapter
-        List<FriendlyMessage> friendlyMessages = new ArrayList<>();
+
+        friendlyMessages = new ArrayList<>();
         mMessageAdapter = new MessageAdapter(this, R.layout.item_message, friendlyMessages);
         mMessageListView.setAdapter(mMessageAdapter);
         firebaseStorage = FirebaseStorage.getInstance();
@@ -108,8 +119,7 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.setType("image/jpeg");
-//                startActivityForResult(Intent.createChooser(intent, "Complete action using"),RC_PHOTO_PICKER);
-                startActivityForResult(intent,RC_PHOTO_PICKER);
+                startActivityForResult(intent, RC_PHOTO_PICKER);
                 // TODO: Fire an intent to show an image picker
             }
         });
@@ -160,14 +170,23 @@ public class MainActivity extends AppCompatActivity {
                                             new AuthUI.IdpConfig.Builder(AuthUI.GOOGLE_PROVIDER).build()))
                                     .build(),
                             RC_SIGN_IN);
-//                    Snackbar.make(getWindow().getDecorView(), "Logged in", Snackbar.LENGTH_SHORT).show();
                 } else {
-//                    Snackbar.make(getWindow().getDecorView(), "Logging in", Snackbar.LENGTH_SHORT).show();
                     onSignedIn(firebaseAuth.getCurrentUser().getDisplayName());
                 }
             }
         };
+        broadcastReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if(intent.getIntExtra("resultCode",RESULT_CANCELED) == RESULT_OK ){
+                    friendlyMessages.add((FriendlyMessage) intent.getParcelableExtra("messages"));
+                    mMessageAdapter.notifyDataSetChanged();
+                    Log.d("BroadcastReceiver Ran", String.valueOf(friendlyMessages.size()));
+                }
+            }
+        };
     }
+
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -175,15 +194,16 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == RC_SIGN_IN) {
             if (resultCode == RESULT_CANCELED)
                 finish();
-        } else if(requestCode == RC_PHOTO_PICKER && resultCode == RESULT_OK){
+        } else if (requestCode == RC_PHOTO_PICKER && resultCode == RESULT_OK) {
             Uri photoUri = data.getData();
+            Log.e("Image Chosen","true");
             StorageReference imageStorageReference = storageReference.child(photoUri.getLastPathSegment());
             UploadTask imageUploadTask = imageStorageReference.putFile(photoUri);
             imageUploadTask.addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
                 @Override
                 public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-                    Uri downloadUrl  = taskSnapshot.getDownloadUrl();
-                    FriendlyMessage friendlyMessage = new FriendlyMessage(null,mUsername,downloadUrl.toString());
+                    Uri downloadUrl = taskSnapshot.getDownloadUrl();
+                    FriendlyMessage friendlyMessage = new FriendlyMessage(null, mUsername, downloadUrl.toString());
                     databaseReference.push().setValue(friendlyMessage);
                 }
             });
@@ -201,8 +221,7 @@ public class MainActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
             case R.id.sign_out_menu:
-//                AuthUI.getInstance().signOut(this);
-                FirebaseAuth.getInstance().signOut();
+                AuthUI.getInstance().signOut(this);
                 return true;
             default:
                 return super.onOptionsItemSelected(item);
@@ -212,6 +231,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+        Log.d("Broadcast unregistered","true");
+        mMessageAdapter.clear();
+        mMessageAdapter.notifyDataSetChanged();
     }
 
     @Override
@@ -225,11 +248,15 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         firebaseAuth.addAuthStateListener(authStateListener);
+        IntentFilter intentFilter = new IntentFilter(FetchMessageIntentService.TAG);
+        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver,intentFilter);
+        Log.d("Broadcast registered","true");
     }
 
     public void onSignedIn(String username) {
         mUsername = username;
-        attachDbReadListeenr();
+        Intent intent = new Intent(this, FetchMessageIntentService.class);
+        startService(intent);
     }
 
     public void onSignedOut() {
@@ -238,37 +265,36 @@ public class MainActivity extends AppCompatActivity {
         mMessageAdapter.clear();
     }
 
-    public void attachDbReadListeenr() {
-        if (childEventListener == null) {
-            childEventListener = new ChildEventListener() {
-                @Override
-                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
-                    FriendlyMessage friendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
-                    mMessageAdapter.add(friendlyMessage);
-                }
-
-                @Override
-                public void onChildChanged(DataSnapshot dataSnapshot, String s) {
-
-                }
-
-                @Override
-                public void onChildRemoved(DataSnapshot dataSnapshot) {
-
-                }
-
-                @Override
-                public void onChildMoved(DataSnapshot dataSnapshot, String s) {
-
-                }
-
-                @Override
-                public void onCancelled(DatabaseError databaseError) {
+    private void sendNotification(final FriendlyMessage friendlyMessage) {
+        final NotificationCompat.Builder notificationCompat = new NotificationCompat.Builder(this);
+        notificationCompat.setContentTitle(friendlyMessage.getName());
+        notificationCompat.setSmallIcon(R.mipmap.ic_launcher)
+                .setAutoCancel(true)
+                .setPriority(PRIORITY_MAX);
+        Intent intent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        notificationCompat.setContentIntent(pendingIntent);
+        final NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                int incr = 0;
+                while (incr <= 3) {
+                    notificationCompat.setProgress(0, 0, true);
+                    notificationManager.notify(1, notificationCompat.build());
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    incr++;
 
                 }
-            };
-        }
-        databaseReference.addChildEventListener(childEventListener);
+                notificationCompat.setContentText(friendlyMessage.getText());
+                notificationCompat.setProgress(0, 0, false);
+                notificationManager.notify(1, notificationCompat.build());
+            }
+        }).start();
     }
 
     public void removeDbReadListener() {
