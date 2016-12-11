@@ -59,19 +59,19 @@ import static android.support.v4.app.NotificationCompat.PRIORITY_MAX;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = "MainActivity";
-
     public static final String ANONYMOUS = "anonymous";
     public static final int DEFAULT_MSG_LENGTH_LIMIT = 1000;
+    private static final String TAG = "MainActivity";
     private static final int RC_PHOTO_PICKER = 2;
-
+    private static final int RC_SIGN_IN = 1;
+    ArrayList<FriendlyMessage> friendlyMessages;
+    BroadcastReceiver broadcastReceiver;
     private ListView mMessageListView;
     private MessageAdapter mMessageAdapter;
     private ProgressBar mProgressBar;
     private ImageButton mPhotoPickerButton;
     private EditText mMessageEditText;
     private Button mSendButton;
-    private static final int RC_SIGN_IN = 1;
     private ChildEventListener childEventListener;
     private FirebaseDatabase firebaseDatabase;
     private DatabaseReference databaseReference;
@@ -79,11 +79,7 @@ public class MainActivity extends AppCompatActivity {
     private FirebaseAuth.AuthStateListener authStateListener;
     private FirebaseStorage firebaseStorage;
     private StorageReference storageReference;
-
-    ArrayList<FriendlyMessage> friendlyMessages;
     private String mUsername;
-
-    BroadcastReceiver broadcastReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -300,5 +296,11 @@ public class MainActivity extends AppCompatActivity {
     public void removeDbReadListener() {
         if (childEventListener != null)
             databaseReference.removeEventListener(childEventListener);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        stopService(new Intent(this, FetchMessageIntentService.class));
     }
 }
